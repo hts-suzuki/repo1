@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カナ自動入力の試験ページ</title>
+<style>
+  :root { color-scheme: light; }   /* OS やブラウザがダークモードでも、ボタンや入力欄の文字色が薄くならないように */
+  body { font-family: system-ui, "Yu Gothic UI", "Hiragino Sans", "Meiryo", sans-serif; color: #1a1a1a; background: #fff;
+         line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  h2 { font-size: 1.05rem; margin: 1.75rem 0 .25rem; border-bottom: 1px solid #999; }
+  p, li { font-size: .925rem; }
+  label { display: block; font-weight: 600; margin-top: .75rem; }
+  input[type=text] { width: 100%; max-width: 34rem; font-size: 1rem; padding: .45rem .55rem; border: 1px solid #767676;
+                     border-radius: 4px; box-sizing: border-box; }
+  input[type=text]:focus-visible, button:focus-visible, select:focus-visible { outline: 3px solid #1a5fb4; outline-offset: 1px; }
+  .status { font-size: .875rem; margin: .3rem 0 0; min-height: 1.4em; }
+  .status strong { font-weight: 700; }
+  table { border-collapse: collapse; font-size: .8rem; margin-top: .4rem; }
+  th, td { border: 1px solid #aaa; padding: 2px 6px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  button { font-size: .95rem; font-weight: 600; padding: .4rem .9rem; margin: .4rem .4rem 0 0; border: 2px solid #000; border-radius: 4px;
+           background: #fff; color: #000; cursor: pointer; }
+  button:hover { background: #e6e6e6; }
+  input[type=text], textarea { color: #000; background: #fff; }
+  textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; font-size: .75rem; border: 1px solid #767676; }
+  .box { border: 1px solid #ccc; border-radius: 6px; padding: .5rem .9rem .9rem; margin-top: .75rem; }
+  .note { font-size: .8rem; color: #444; }
+  code { font-family: ui-monospace, Consolas, monospace; background: #f3f3f3; padding: 0 .2em; }
+</style>
+</head>
+<body>
+<h1>カナ自動入力の試験ページ（フィジビリティ確認用）</h1>
+<p>漢字の欄に打った文字の「変換する前の読み」を、ブラウザの IME のイベント（compositionstart・compositionupdate・compositionend）から拾って、カナの欄に入れる試しです。
+  届書作成・電子申請システムのコードとは別の、この 1 ファイルだけで動く試験用のページです（外部への送信はしません）。</p>
+<p class="note">使い方：下の「試すこと」を順に打ち、カナの欄と「拾った読み」の表を見てください。端末・ブラウザ・IME ごとの結果は、いちばん下の【ログをコピー】でチャットに貼れます。</p>
+
+<div class="box">
+  <label for="env-ime">使っている IME（例：Microsoft IME、Google 日本語入力、macOS 日本語入力（ライブ変換オン）、iPhone 標準、Gboard）</label>
+  <input type="text" id="env-ime" autocomplete="off">
+  <label for="env-memo">メモ（試したこと・気づいたこと）</label>
+  <input type="text" id="env-memo" autocomplete="off">
+  <p class="note" id="env-ua"></p>
+</div>
+
+<h2>1. 氏名（漢字）→ 氏名（カナ。半角）</h2>
+<label for="name-kanji">氏名（漢字）</label>
+<input type="text" id="name-kanji" autocomplete="off">
+<label for="name-kana">氏名（カナ）</label>
+<input type="text" id="name-kana" autocomplete="off">
+<p class="status" id="name-status" aria-live="polite"></p>
+<button type="button" id="name-reset">この組をやり直す</button>
+<div id="name-segments"></div>
+
+<h2>2. 住所（漢字）→ 住所（カナ。半角）</h2>
+<p class="note">本番では、郵便番号で入れた「都道府県〜町域」のカナは郵便番号のデータから入れ、そのあとに打った番地・建物名をこの仕組みで足す想定です。ここでは住所を全部打って試してください。</p>
+<label for="addr-kanji">住所（漢字）</label>
+<input type="text" id="addr-kanji" autocomplete="off">
+<label for="addr-kana">住所（カナ）</label>
+<input type="text" id="addr-kana" autocomplete="off">
+<p class="status" id="addr-status" aria-live="polite"></p>
+<button type="button" id="addr-reset">この組をやり直す</button>
+<div id="addr-segments"></div>
+
+<h2>3. 氏名（漢字）→ 氏名（カナ。全角）</h2>
+<p class="note">申請者情報のフリガナ（全角カタカナ）の形です。</p>
+<label for="full-kanji">氏名（漢字）</label>
+<input type="text" id="full-kanji" autocomplete="off">
+<label for="full-kana">フリガナ</label>
+<input type="text" id="full-kana" autocomplete="off">
+<p class="status" id="full-status" aria-live="polite"></p>
+<button type="button" id="full-reset">この組をやり直す</button>
+<div id="full-segments"></div>
+
+<h2>試すこと</h2>
+<ol>
+  <li>氏名：「すずき」と打って変換・確定 → 全角スペース → 「いちろう」と打って変換・確定。カナが「ｽｽﾞｷ ｲﾁﾛｳ」になるか。</li>
+  <li>文節をまとめて変換：「すずきいちろう」と一気に打って変換・確定。</li>
+  <li>予測変換：「すず」まで打って、候補（予測）から「鈴木」を選ぶ（Windows は Tab や ↓、スマートフォンは候補のタップ）。→ 読みが「すず」で止まるか。</li>
+  <li>カタカナ・ひらがなのまま確定（F7・F6 など）や、英数字・数字を直接打つ。</li>
+  <li>住所：「とうきょうと」「ちよだく」「かすみがせき」と変換・確定 → 「１－２－２」や半角の「1-2-2」を打つ → 建物名を打つ。</li>
+  <li>末尾を Backspace で消す（かなの文字だけ／漢字の途中まで）。</li>
+  <li>カーソルを途中に動かして直す、貼り付ける、ブラウザの自動入力を使う。→ 自動入力が止まり、そのことが表示されるか。</li>
+  <li>カナの欄を直接直す。→ そのあと漢字を足してもカナが上書きされないか。</li>
+  <li>Mac は「ライブ変換」をオン・オフの両方で、スマートフォンはフリック入力・ローマ字入力の両方で。</li>
+</ol>
+
+<h2>ログ</h2>
+<p class="note">IME とブラウザのイベントの記録です（新しいものが下）。</p>
+<textarea id="log" rows="14" readonly></textarea>
+<button type="button" id="log-copy">ログをコピー</button>
+<button type="button" id="log-clear">ログを消す</button>
+<span class="status" id="copy-status" aria-live="polite"></span>
+
+<script>
+'use strict';
+
+// ---------- 文字の変換 ----------
+
+/** かなだけ（ひらがな・カタカナ・長音・踊り字・空白）か。読みとしてそのまま使えるもの */
+const KANA_ONLY = /^[ぁ-ゖゝゞァ-ヺーヽヾ　 ]+$/;
+/** 読みに置き換えなくてよい文字（かな、半角・全角の英数字と記号、空白、ハイフンの仲間） */
+const DIRECT_CHAR = /^[ぁ-ゖゝゞァ-ヺーヽヾ　 !-~！-～‐-―−｡-ﾟ]$/;
+
+function isDirect(text) {
+  return [...text].every((c) => DIRECT_CHAR.test(c));
+}
+
+function hiraganaToKatakana(text) {
+  return text.replace(/[ぁ-ゖゝゞ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
+}
+
+const FULL_KATAKANA = 'ァアィイゥウェエォオカキクケコサシスセソタチッツテトナニヌネノハヒフヘホマミムメモャヤュユョヨラリルレロワヲンー・「」。、ヵヶヮヰヱ';
+const HALF_KATAKANA = 'ｧｱｨｲｩｳｪｴｫｵｶｷｸｹｺｻｼｽｾｿﾀﾁｯﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓｬﾔｭﾕｮﾖﾗﾘﾙﾚﾛﾜｦﾝｰ･｢｣｡､ｶｹﾜｲｴ';
+const TO_HALF = new Map([...FULL_KATAKANA].map((c, i) => [c, [...HALF_KATAKANA][i]]));
+const HYPHENS = /[‐-―−－]/g;
+
+/** 全角の英数字・記号と全角空白を半角に。ハイフンの仲間は「-」に。数字にはさまれた長音「ー」も「-」に */
+function normalizeAscii(text) {
+  return text
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, ' ')
+    .replace(HYPHENS, '-')
+    .replace(/(?<=[0-9])[ーｰ](?=[0-9])/g, '-');
+}
+
+/** 読み → 半角カナ（英小文字は大文字に） */
+function toHalfWidthKana(reading) {
+  const katakana = hiraganaToKatakana(normalizeAscii(reading));
+  let out = '';
+  for (const c of katakana) {
+    if (TO_HALF.has(c)) { out += TO_HALF.get(c); continue; }
+    const d = c.normalize('NFD');                      // ガ → カ＋濁点、パ → ハ＋半濁点、ヴ → ウ＋濁点
+    if (d.length === 2 && TO_HALF.has(d[0])) {
+      out += TO_HALF.get(d[0]) + (d[1] === '゙' ? 'ﾞ' : 'ﾟ');
+      continue;
+    }
+    out += c;
+  }
+  return out.toUpperCase();
+}
+
+/** 読み → 全角カタカナ（英数字は半角のまま） */
+function toFullWidthKatakana(reading) {
+  return hiraganaToKatakana(normalizeAscii(reading).replace(/ /g, '　'));
+}
+
+// ---------- ログ ----------
+
+const logArea = document.getElementById('log');
+const logLines = [];
+function log(where, type, detail) {
+  const t = new Date();
+  const time = t.toTimeString().slice(0, 8) + '.' + String(t.getMilliseconds()).padStart(3, '0');
+  logLines.push(`${time} [${where}] ${type} ${detail}`);
+  if (logLines.length > 400) logLines.shift();
+  logArea.value = logLines.join('\n');
+  logArea.scrollTop = logArea.scrollHeight;
+}
+const q = (s) => JSON.stringify(s);
+
+// ---------- 漢字の欄からカナの欄へ ----------
+
+function bindKana(name, src, dst, statusEl, segmentsEl, resetButton, convert) {
+  const state = {
+    segments: [],      // { text, reading, how }。reading が null は読みが取れなかった部分
+    composing: false,
+    captured: '',      // 変換中に見えた、かなだけの文字（＝変換前の読み）のうち最後のもの
+    pending: null,     // compositionend で確定した文字と、その読み
+    lost: false,       // 途中を直したなどで、漢字の欄とカナの欄の対応が取れなくなった
+    dstDirty: false,   // カナの欄を利用者が直接直した
+  };
+
+  src.addEventListener('compositionstart', (e) => {
+    state.composing = true;
+    state.captured = '';
+    log(name, 'compositionstart', `data=${q(e.data)} value=${q(src.value)}`);
+  });
+
+  src.addEventListener('compositionupdate', (e) => {
+    if (e.data && KANA_ONLY.test(e.data)) state.captured = e.data;
+    log(name, 'compositionupdate', `data=${q(e.data)} captured=${q(state.captured)}`);
+  });
+
+  src.addEventListener('compositionend', (e) => {
+    state.composing = false;
+    const text = e.data || '';
+    if (text === '') {
+      state.pending = null;
+    } else if (isDirect(text)) {
+      state.pending = { text, reading: text, how: 'かな・英数字のまま確定' };
+    } else if (state.captured) {
+      state.pending = { text, reading: state.captured, how: '変換前の読み' };
+    } else {
+      state.pending = { text, reading: null, how: '読みが見えなかった' };
+    }
+    log(name, 'compositionend', `data=${q(text)} reading=${q(state.pending && state.pending.reading)} value=${q(src.value)}`);
+    setTimeout(reconcile, 0);   // ブラウザによって input と compositionend の順が違うので、両方のあとに突き合わせる
+  });
+
+  src.addEventListener('input', (e) => {
+    log(name, 'input', `inputType=${e.inputType} isComposing=${e.isComposing} data=${q(e.data)} value=${q(src.value)}`);
+    if (e.isComposing || state.composing) return;
+    reconcile();
+  });
+
+  dst.addEventListener('input', (e) => {
+    state.dstDirty = true;
+    log(name, 'カナの欄を直接入力', `value=${q(dst.value)}`);
+    render();
+  });
+
+  resetButton.addEventListener('click', () => {
+    Object.assign(state, { segments: [], composing: false, captured: '', pending: null, lost: false, dstDirty: false });
+    src.value = '';
+    dst.value = '';
+    log(name, 'やり直し', '');
+    render();
+    src.focus();
+  });
+
+  /** 打った分を 1 文字ずつの区切りにする（漢字は読みが分からない） */
+  function pushDirect(text) {
+    for (const c of text) {
+      if (DIRECT_CHAR.test(c)) state.segments.push({ text: c, reading: c, how: 'そのまま' });
+      else state.segments.push({ text: c, reading: null, how: '変換を通らずに入った（貼り付けなど）' });
+    }
+  }
+
+  /** 漢字の欄の今の値と、覚えている区切りを突き合わせる */
+  function reconcile() {
+    if (state.lost) { render(); return; }
+    const value = src.value;
+    const known = state.segments.map((s) => s.text).join('');
+    if (value === known) { state.pending = null; render(); return; }
+    if (value === '') {                                  // 全部消したら初めから
+      state.segments = [];
+      state.pending = null;
+      if (!state.dstDirty) dst.value = '';
+      render();
+      return;
+    }
+    if (value.startsWith(known)) {                       // 末尾に足した
+      const added = value.slice(known.length);
+      if (state.pending && added.endsWith(state.pending.text)) {
+        pushDirect(added.slice(0, added.length - state.pending.text.length));
+        state.segments.push(state.pending);
+      } else {
+        pushDirect(added);
+      }
+    } else if (known.startsWith(value)) {                // 末尾を消した
+      let remain = value.length;
+      const kept = [];
+      for (const s of state.segments) {
+        if (remain <= 0) break;
+        if (s.text.length <= remain) { kept.push(s); remain -= s.text.length; continue; }
+        const part = s.text.slice(0, remain);
+        kept.push(s.reading === s.text ? { text: part, reading: part, how: s.how }
+                                       : { text: part, reading: null, how: '漢字の途中まで消した' });
+        remain = 0;
+      }
+      state.segments = kept;
+    } else {                                             // 途中を直した・置き換えた
+      state.lost = true;
+      log(name, '対応が取れなくなった', `value=${q(value)} known=${q(known)}`);
+    }
+    state.pending = null;
+    render();
+  }
+
+  function render() {
+    const reading = state.segments.map((s) => s.reading ?? '').join('');
+    const unknown = state.segments.filter((s) => s.reading === null).map((s) => s.text).join('');
+    if (!state.lost && !state.dstDirty) dst.value = convert(reading);
+
+    if (state.dstDirty) {
+      statusEl.innerHTML = '<strong>停止：</strong>カナの欄を直接直したので、自動では入れません。';
+    } else if (state.lost) {
+      statusEl.innerHTML = '<strong>停止：</strong>漢字の欄の途中を直したので、自動では入れません。カナの欄を確かめて直してください。';
+    } else if (unknown) {
+      statusEl.innerHTML = '<strong>注意：</strong>読みが取れなかった文字があります（「' + escapeHtml(unknown) + '」）。カナの欄を確かめてください。';
+    } else if (state.segments.length) {
+      statusEl.textContent = '自動で入れています。読みが違うときはカナの欄を直してください。';
+    } else {
+      statusEl.textContent = '';
+    }
+
+    const rows = state.segments.map((s) =>
+      `<tr><td>${escapeHtml(s.text)}</td><td>${s.reading === null ? '（取れない）' : escapeHtml(s.reading)}</td><td>${escapeHtml(s.how)}</td></tr>`).join('');
+    segmentsEl.innerHTML = rows
+      ? `<table><caption class="note" style="text-align:left">拾った読み</caption><thead><tr><th>確定した文字</th><th>読み</th><th>拾い方</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const $ = (id) => document.getElementById(id);
+bindKana('氏名', $('name-kanji'), $('name-kana'), $('name-status'), $('name-segments'), $('name-reset'), toHalfWidthKana);
+bindKana('住所', $('addr-kanji'), $('addr-kana'), $('addr-status'), $('addr-segments'), $('addr-reset'), toHalfWidthKana);
+bindKana('全角', $('full-kanji'), $('full-kana'), $('full-status'), $('full-segments'), $('full-reset'), toFullWidthKatakana);
+
+$('env-ua').textContent = 'ブラウザ：' + navigator.userAgent;
+
+$('log-clear').addEventListener('click', () => { logLines.length = 0; logArea.value = ''; });
+$('log-copy').addEventListener('click', async () => {
+  const text = [
+    '# カナ自動入力の試験ページのログ',
+    'IME: ' + $('env-ime').value,
+    'メモ: ' + $('env-memo').value,
+    'ブラウザ: ' + navigator.userAgent,
+    '氏名: ' + q($('name-kanji').value) + ' → ' + q($('name-kana').value),
+    '住所: ' + q($('addr-kanji').value) + ' → ' + q($('addr-kana').value),
+    '全角: ' + q($('full-kanji').value) + ' → ' + q($('full-kana').value),
+    '',
+    ...logLines,
+  ].join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    $('copy-status').textContent = 'コピーしました。';
+  } catch {
+    logArea.value = text;
+    logArea.focus();
+    logArea.select();
+    $('copy-status').textContent = 'コピーできなかったので、ログの欄に全文を出して選択しました。手でコピーしてください。';
+  }
+});
+
+// 試験用：変換の関数をコンソールから呼べるように
+window.kanaProbe = { toHalfWidthKana, toFullWidthKatakana, normalizeAscii };
+</script>
+</body>
+</html>
